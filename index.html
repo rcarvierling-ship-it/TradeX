@@ -1610,483 +1610,547 @@ function renderDonut(s){
 // ═══════════════════════════════════════════
 //  EQUITY CURVE (reusable)
 // ═══════════════════════════════════════════
-function drawEquityCurve(canvasId,trades,height){
-  const canvas=document.getElementById(canvasId);
-  if(!canvas)return;
-  const ctx=canvas.getContext('2d');
-  const W=canvas.offsetWidth||800,H=height||170;
-  canvas.width=W;canvas.height=H;
-  ctx.clearRect(0,0,W,H);
-  const sorted=[...trades].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-  let bal=state.startBal,peak=state.startBal;
-  const eq=[state.startBal],dd=[0];
-  sorted.forEach(t=>{bal+=t.pnl;if(bal>peak)peak=bal;eq.push(bal);dd.push(-(peak-bal));});
-  const n=eq.length;
-  if(n<2){ctx.strokeStyle='rgba(68,138,255,.3)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();return;}
-  const pad={t:14,b:14,l:8,r:8};
-  const minE=Math.min(...eq),maxE=Math.max(...eq),rng=maxE-minE||1;
-  const minD=Math.min(...dd)||0;
-  const toX=i=>pad.l+(i/(n-1))*(W-pad.l-pad.r);
-  const toYe=v=>pad.t+(1-(v-minE)/rng)*(H-pad.t-pad.b);
-  const toYd=v=>H-pad.b+(v/Math.abs(minD||1))*(H-pad.t-pad.b)*0.28;
+function canvasSize(canvas, fallbackW, fallbackH) {
+  const W = (canvas.parentElement ? canvas.parentElement.clientWidth : 0) || fallbackW || 600;
+  const H = fallbackH || 200;
+  canvas.width = W; canvas.height = H;
+  return { W, H };
+}
+function axisLine(ctx, x1, y1, x2, y2) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+function fmtAxis(v) {
+  const a = Math.abs(v), s = v < 0 ? '−' : '';
+  if (a >= 1000) return s + '$' + (a/1000).toFixed(1).replace(/\.0$/,'') + 'k';
+  return s + '$' + a.toFixed(0);
+}
 
-  // DD area
-  if(Math.abs(minD)>1){
-    ctx.beginPath();ctx.moveTo(toX(0),H-pad.b);
-    dd.forEach((v,i)=>ctx.lineTo(toX(i),toYd(v)));
-    ctx.lineTo(toX(n-1),H-pad.b);ctx.closePath();
-    const dg=ctx.createLinearGradient(0,0,0,H);
-    dg.addColorStop(0,'rgba(255,61,87,.28)');dg.addColorStop(1,'rgba(255,61,87,.03)');
-    ctx.fillStyle=dg;ctx.fill();
-    ctx.beginPath();dd.forEach((v,i)=>i===0?ctx.moveTo(toX(0),toYd(v)):ctx.lineTo(toX(i),toYd(v)));
-    ctx.strokeStyle='rgba(255,61,87,.55)';ctx.lineWidth=1.2;ctx.stroke();
+function renderBarChart(canvasId, labels, values) {
+  const colors = values.map(v => v >= 0 ? 'rgba(0,230,118,.85)' : 'rgba(255,61,87,.85)');
+  renderBarChartWithColors(canvasId, labels, values, colors);
+}
+function renderBarChartWithColors(canvasId, labels, values, colors) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  const { W, H } = canvasSize(c, 500, parseInt(c.getAttribute('height')) || 160);
+  ctx.clearRect(0, 0, W, H);
+
+  const maxAbs = Math.max(...values.map(Math.abs), 0.01);
+  // Nice steps
+  const nT = 4;
+  const rawStep = (maxAbs * 2) / nT;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+  const step = Math.ceil(rawStep / mag) * mag || 1;
+  const yMax = step * Math.ceil(maxAbs / step);
+  const yMin = -yMax, yRange = yMax - yMin;
+
+  const pad = { t: 18, b: 30, l: 54, r: 10 };
+  const cH = H - pad.t - pad.b, cW = W - pad.l - pad.r;
+  const toY = v => pad.t + (1 - (v - yMin) / yRange) * cH;
+  const zY = toY(0);
+
+  // Grid + Y labels
+  ctx.font = '9px Space Mono,monospace';
+  ctx.textAlign = 'right';
+  for (let y = yMin; y <= yMax + step * 0.01; y += step) {
+    const py = toY(y);
+    if (py < pad.t - 4 || py > H - pad.b + 4) continue;
+    ctx.strokeStyle = y === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = y === 0 ? 1.5 : 1;
+    axisLine(ctx, pad.l, py, W - pad.r, py);
+    ctx.fillStyle = y === 0 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.3)';
+    ctx.fillText(fmtAxis(y), pad.l - 5, py + 3.5);
   }
 
-  // Equity fill
-  const isProfit=eq[n-1]>=eq[0];
-  const eg=ctx.createLinearGradient(0,pad.t,0,H-pad.b);
-  if(isProfit){eg.addColorStop(0,'rgba(0,230,118,.24)');eg.addColorStop(1,'rgba(0,230,118,.02)');}
-  else{eg.addColorStop(0,'rgba(255,61,87,.02)');eg.addColorStop(1,'rgba(255,61,87,.24)');}
-  ctx.beginPath();
-  ctx.moveTo(toX(0),toYe(eq[0]));
-  for(let i=1;i<n;i++){const cx=(toX(i-1)+toX(i))/2;const cy=(toYe(eq[i-1])+toYe(eq[i]))/2;ctx.quadraticCurveTo(toX(i-1),toYe(eq[i-1]),cx,cy);}
-  ctx.lineTo(toX(n-1),H-pad.b);ctx.lineTo(toX(0),H-pad.b);ctx.closePath();
-  ctx.fillStyle=eg;ctx.fill();
-  // Line
-  ctx.beginPath();ctx.moveTo(toX(0),toYe(eq[0]));
-  for(let i=1;i<n;i++){const cx=(toX(i-1)+toX(i))/2;const cy=(toYe(eq[i-1])+toYe(eq[i]))/2;ctx.quadraticCurveTo(toX(i-1),toYe(eq[i-1]),cx,cy);}
-  ctx.strokeStyle=isProfit?'var(--green)':'var(--red)';ctx.lineWidth=2.2;ctx.stroke();
-  // End dot
-  const lx=toX(n-1),ly=toYe(eq[n-1]);
-  ctx.beginPath();ctx.arc(lx,ly,5,0,Math.PI*2);ctx.fillStyle=isProfit?'var(--green)':'var(--red)';ctx.fill();
-}
-
-// ═══════════════════════════════════════════
-//  CALENDAR
-// ═══════════════════════════════════════════
-function calNav(dir){
-  state.calMonth+=dir;
-  if(state.calMonth>11){state.calMonth=0;state.calYear++;}
-  if(state.calMonth<0){state.calMonth=11;state.calYear--;}
-  renderCalendar();
-}
-function renderCalendar(){
-  const year=state.calYear,month=state.calMonth;
-  const today=new Date();
-  const mn=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-  document.getElementById('cal-lbl').textContent=`${mn[month]} ${year}`;
-  const dMap={};
-  const prefix=`${year}-${String(month+1).padStart(2,'0')}`;
-  state.trades.filter(t=>t.date.startsWith(prefix)).forEach(t=>{
-    const d=parseInt(t.date.slice(8));
-    if(!dMap[d])dMap[d]={pnl:0,count:0};
-    dMap[d].pnl+=parseFloat(t.pnl);dMap[d].count++;
-  });
-  const vals=Object.values(dMap);
-  const mPnl=vals.reduce((a,b)=>a+b.pnl,0);
-  const wD=vals.filter(v=>v.pnl>0).length;
-  const lD=vals.filter(v=>v.pnl<0).length;
-  const avgD=vals.length?mPnl/vals.length:0;
-  const setEl=(id,v,col)=>{const el=document.getElementById(id);if(el){el.textContent=v;if(col)el.style.color=col;}};
-  setEl('cal-mpnl',vals.length?fmt(mPnl):'—',mPnl>0?'var(--green)':mPnl<0?'var(--red)':'var(--text)');
-  setEl('cal-wdays',wD,'var(--green)');setEl('cal-ldays',lD,'var(--red)');
-  setEl('cal-avg',vals.length?fmt(avgD):'—',avgD>0?'var(--green)':avgD<0?'var(--red)':'var(--text)');
-  const maxAbs=Math.max(...vals.map(v=>Math.abs(v.pnl)),1);
-  const grid=document.getElementById('cal-grid');
-  const dow=['MON','TUE','WED','THU','FRI','SAT','SUN'];
-  let html=dow.map(d=>`<div class="cal-hdr">${d}</div>`).join('');
-  const firstDow=new Date(year,month,1).getDay();
-  const adj=firstDow===0?6:firstDow-1;
-  const dim=new Date(year,month+1,0).getDate();
-  for(let i=0;i<adj;i++)html+=`<div class="cal-day empty"></div>`;
-  for(let d=1;d<=dim;d++){
-    const w=new Date(year,month,d).getDay();
-    const isWe=w===0||w===6;
-    const isTd=year===today.getFullYear()&&month===today.getMonth()&&d===today.getDate();
-    const data=dMap[d];
-    let cls='cal-day';
-    if(isWe)cls+=' wknd';if(isTd)cls+=' today';
-    let pHtml='<div></div>',tHtml='<div></div>';
-    if(data){
-      const intens=Math.abs(data.pnl)/maxAbs;
-      cls+=data.pnl>0?(intens>0.5?' cwinbig':' cwin'):(intens>0.5?' clossbig':' closs');
-      pHtml=`<div class="cal-dpnl">${data.pnl>=0?'+':''}$${Math.abs(data.pnl).toFixed(0)}</div>`;
-      tHtml=`<div class="cal-dtrades">${data.count}t</div>`;
+  // Bars
+  const slot = cW / labels.length;
+  const bW = Math.max(slot * 0.58, 6), gap = (slot - bW) / 2;
+  for (let i = 0; i < labels.length; i++) {
+    const x = pad.l + i * slot + gap;
+    const v = values[i];
+    const bH = Math.max(Math.abs(v) / yRange * cH, v !== 0 ? 2 : 0);
+    const y = v >= 0 ? zY - bH : zY;
+    ctx.fillStyle = colors[i];
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, bW, bH, [v>=0?3:0, v>=0?3:0, v<0?3:0, v<0?3:0]);
+    else ctx.rect(x, y, bW, bH);
+    ctx.fill();
+    // Value label
+    if (Math.abs(v) > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '8px Space Mono,monospace'; ctx.textAlign = 'center';
+      ctx.fillText(fmtAxis(v), x + bW/2, v >= 0 ? y - 3 : y + bH + 9);
     }
-    html+=`<div class="${cls}" onclick="showDayDetail(${year},${month},${d})"><div class="cal-dn">${d}</div>${pHtml}${tHtml}</div>`;
+    // X label
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'center';
+    ctx.fillText(labels[i], x + bW/2, H - 8);
   }
-  grid.innerHTML=html;
+  // Axis line
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+  axisLine(ctx, pad.l, pad.t, pad.l, H - pad.b);
 }
 
-function showDayDetail(year,month,day){
-  const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-  const trades=state.trades.filter(t=>t.date===ds);
-  const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  document.getElementById('modal-day-title').textContent=`${mn[month]} ${day}, ${year}`;
-  if(!trades.length){document.getElementById('modal-day-body').innerHTML='<div style="text-align:center;padding:28px;color:var(--text3);font-size:12px;">No trades on this day.</div>';}
-  else{
-    const dp=trades.reduce((a,t)=>a+parseFloat(t.pnl),0);
-    document.getElementById('modal-day-body').innerHTML=`
-      <div style="margin-bottom:12px;padding:11px;background:var(--bg3);border-radius:8px;display:flex;justify-content:space-between;">
-        <span style="font-size:12px;color:var(--text3);font-family:'Space Mono'">Day P&L</span>
-        <span style="font-family:'Space Mono';font-weight:700;color:${dp>=0?'var(--green)':'var(--red)'}">${fmt(dp)}</span>
-      </div>
-      <div style="overflow-x:auto;"><table class="t-table"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th></tr></thead>
-      <tbody>${trades.map(t=>`<tr><td>${t.time||'—'}</td><td style="font-weight:700">${t.symbol}</td><td><span class="badge ${t.side==='LONG'?'bl':'bs'}">${t.side}</span></td><td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td><td style="color:${parseFloat(t.pnl)>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(parseFloat(t.pnl))}</td><td style="color:var(--text3)">${t.setup||'—'}</td></tr>`).join('')}</tbody></table></div>`;
-  }
-  openModal('modal-day');
-}
+function drawEquityCurve(canvasId, trades, height) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const { W, H } = canvasSize(canvas, 700, height || 180);
+  ctx.clearRect(0, 0, W, H);
 
-// ═══════════════════════════════════════════
-//  TRADES PAGE
-// ═══════════════════════════════════════════
-function renderTradesPage(){
-  const sf=document.getElementById('fil-sym').value;
-  const sid=document.getElementById('fil-side').value;
-  const rf=document.getElementById('fil-res').value;
-  const syms=[...new Set(state.trades.map(t=>t.symbol))].sort();
-  const ss=document.getElementById('fil-sym');
-  const cv=ss.value;
-  ss.innerHTML='<option value="">All Symbols</option>'+syms.map(s=>`<option value="${s}"${s===cv?' selected':''}>${s}</option>`).join('');
-  let filtered=[...state.trades].sort((a,b)=>b.date.localeCompare(a.date)||b.time.localeCompare(a.time));
-  if(sf)filtered=filtered.filter(t=>t.symbol===sf);
-  if(sid)filtered=filtered.filter(t=>t.side===sid);
-  if(rf)filtered=filtered.filter(t=>rf==='WIN'?t.pnl>0:t.pnl<=0);
-  document.getElementById('fil-count').textContent=`${filtered.length} trade${filtered.length!==1?'s':''}`;
-  const tbody=document.getElementById('trades-tbody');
-  if(!filtered.length){tbody.innerHTML='<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text3);">No trades match.</td></tr>';return;}
-  const gc={'A+':'var(--green)','A':'var(--green)','B':'var(--amber)','C':'var(--text3)','D':'var(--red)'};
-  tbody.innerHTML=filtered.map(t=>{
-    const pnl=parseFloat(t.pnl);const w=pnl>0;
-    const rm=t.stop&&t.entry?((pnl)/(Math.abs(parseFloat(t.entry)-parseFloat(t.stop))*parseFloat(t.qty))).toFixed(2):'—';
-    const hold=holdMinutes(t);
-    return `<tr>
-      <td style="color:var(--text3)">${t.date}</td><td style="color:var(--text3)">${t.time||'—'}</td>
-      <td style="font-weight:700">${t.symbol}</td>
-      <td><span class="badge ${t.side==='LONG'?'bl':'bs'}">${t.side}</span></td>
-      <td>${t.qty}</td><td>${t.entry}</td><td>${t.exit}</td>
-      <td style="color:${w?'var(--green)':'var(--red)'};font-weight:700">${fmt(pnl)}</td>
-      <td style="color:${w?'var(--green)':'var(--red)'}">${rm!=='—'?(w?'+':'')+rm+'R':'—'}</td>
-      <td style="color:var(--text3)">${hold?hold+'m':'—'}</td>
-      <td style="color:var(--text3);font-size:10px">${t.setup||'—'}</td>
-      <td style="color:${gc[t.grade]||'var(--text3)'};font-family:'Space Mono';font-weight:700">${t.grade||'—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteTrade('${t.id}')">✕</button></td>
-    </tr>`;
-  }).join('');
-}
-function exportCSV(){
-  const h=['Date','Time','Symbol','Side','Qty','Entry','Exit','PnL','Setup','Grade','Notes'];
-  const r=state.trades.map(t=>[t.date,t.time,t.symbol,t.side,t.qty,t.entry,t.exit,t.pnl,t.setup,t.grade,`"${(t.notes||'').replace(/"/g,'""')}"`]);
-  const csv=[h,...r].map(x=>x.join(',')).join('\n');
-  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='tradex-trades.csv';a.click();
-  toast('CSV exported!','success');
-}
-
-// ═══════════════════════════════════════════
-//  ANALYTICS (full rebuild)
-// ═══════════════════════════════════════════
-function renderAnalytics(){
-  const t=state.trades;
-  if(!t.length){document.getElementById('an-kpi-row').innerHTML='<div style="grid-column:span 4;text-align:center;padding:60px;color:var(--text3);font-family:Space Mono,monospace;font-size:12px;">Add trades to see analytics.</div>';return;}
-  const s=getStats();
-  // KPI cards
-  document.getElementById('an-kpi-row').innerHTML=`
-    <div class="card"><div class="card-title">Expectancy</div><div class="kpi-v ${cc(s.wr*s.avgWin+(1-s.wr)*s.avgLoss)}" style="font-size:20px;">${fmt(s.wr*s.avgWin+(1-s.wr)*s.avgLoss)}</div><div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:'Space Mono',monospace;">Per trade expected</div></div>
-    <div class="card"><div class="card-title">Max Drawdown</div><div class="kpi-v neg" style="font-size:20px;">−$${s.maxDD.toFixed(2)}</div><div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:'Space Mono',monospace;">${(s.maxDD/state.startBal*100).toFixed(1)}% of account</div></div>
-    <div class="card"><div class="card-title">Best Win Streak</div><div class="kpi-v pos" style="font-size:20px;">${s.mxW} trades</div><div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:'Space Mono',monospace;">Consecutive wins</div></div>
-    <div class="card"><div class="card-title">Sharpe Proxy</div><div class="kpi-v ${cc(calcSharpe(t))}" style="font-size:20px;">${calcSharpe(t).toFixed(2)}</div><div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:'Space Mono',monospace;">Risk-adjusted return</div></div>`;
-
-  renderHeatmap(t);
-  renderSymbolPerf(t);
-  renderScatter('an-scatter','an-scatter-tip',t);
-  renderDistChart(t);
-  renderBarChart('an-dow',['Mon','Tue','Wed','Thu','Fri'],getDowPnl(t));
-  renderBarChart('an-hour',Array.from({length:13},(_,i)=>`${i+9}`),getHourPnl(t));
-  renderMonthlyChart(t);
-  renderSetupPerf(t);
-  renderKeyStats(s,t);
-  renderCumulativeChart(t);
-}
-
-function calcSharpe(trades){
-  if(trades.length<2)return 0;
-  const pnls=trades.map(t=>t.pnl);
-  const mean=pnls.reduce((a,b)=>a+b,0)/pnls.length;
-  const std=Math.sqrt(pnls.map(p=>(p-mean)**2).reduce((a,b)=>a+b,0)/pnls.length)||1;
-  return mean/std;
-}
-
-// HEATMAP: hours 9-17 × Mon-Fri
-function renderHeatmap(trades){
-  const hours=Array.from({length:9},(_,i)=>i+9);
-  const dows=[1,2,3,4,5];
-  const dowN=['Mon','Tue','Wed','Thu','Fri'];
-  const grid={};
-  hours.forEach(h=>dows.forEach(dow=>{grid[`${h}-${dow}`]={pnl:0,count:0,wins:0};}));
-  trades.forEach(t=>{
-    if(!t.time)return;
-    const h=parseInt(t.time.split(':')[0]);
-    const dow=new Date(t.date).getDay();
-    const k=`${h}-${dow}`;
-    if(!grid[k])return;
-    grid[k].pnl+=parseFloat(t.pnl);
-    grid[k].count++;
-    if(parseFloat(t.pnl)>0)grid[k].wins++;
+  const sorted = [...trades].sort((a,b) => a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+  let bal = state.startBal, peak = state.startBal;
+  const eq = [state.startBal], dd = [0];
+  sorted.forEach(t => {
+    bal += parseFloat(t.pnl); if (bal > peak) peak = bal;
+    eq.push(bal); dd.push(-(peak - bal));
   });
-  const allPnls=Object.values(grid).filter(v=>v.count>0).map(v=>v.pnl);
-  const maxAbs=allPnls.length?Math.max(...allPnls.map(Math.abs),1):1;
-  const pnlColor=p=>{const intensity=Math.min(Math.abs(p)/maxAbs,1);
-    if(p>0)return`rgba(0,230,118,${0.12+intensity*0.7})`;
-    if(p<0)return`rgba(255,61,87,${0.12+intensity*0.7})`;
-    return'rgba(80,80,100,0.15)';};
-  let html=`<div class="thm-xlabels">${dowN.map(d=>`<span>${d}</span>`).join('')}</div>`;
-  hours.forEach(h=>{
-    html+=`<div class="thm-row"><div class="thm-ylabel">${h}:00</div>`;
-    dows.forEach(dow=>{
-      const k=`${h}-${dow}`;
-      const cell=grid[k];
-      const col=pnlColor(cell.pnl);
-      const wr=cell.count?Math.round(cell.wins/cell.count*100):0;
-      const tip=cell.count?`${h}:00 ${dowN[dow-1]} · ${fmt(cell.pnl)} · ${cell.count} trades · ${wr}% WR`:'No trades';
-      html+=`<div class="thm-cell" style="background:${col};"><div class="thm-tip">${tip}</div></div>`;
+  const n = eq.length;
+
+  if (n < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '11px Space Mono,monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No trades yet', W/2, H/2); return;
+  }
+
+  const minE = Math.min(...eq), maxE = Math.max(...eq);
+  const rawStep = (maxE - minE) / 4 || 1000;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const eStep = Math.ceil(rawStep / mag) * mag || 1;
+  const eMin = Math.floor(minE / eStep) * eStep;
+  const eMax = Math.ceil(maxE / eStep) * eStep;
+  const eRange = eMax - eMin || 1;
+
+  const pad = { t: 24, b: 30, l: 66, r: 14 };
+  const cH = H - pad.t - pad.b, cW = W - pad.l - pad.r;
+  const toX = i => pad.l + (i / (n-1)) * cW;
+  const toYe = v => pad.t + (1 - (v - eMin) / eRange) * cH;
+  const toYd = v => H - pad.b + (v / (Math.abs(Math.min(...dd)) || 1)) * cH * 0.28;
+
+  // Y grid
+  ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'right';
+  for (let y = eMin; y <= eMax + eStep*0.01; y += eStep) {
+    const py = toYe(y);
+    if (py < pad.t - 6 || py > H - pad.b + 6) continue;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    axisLine(ctx, pad.l, py, W - pad.r, py);
+    ctx.fillStyle = 'rgba(255,255,255,0.32)';
+    ctx.fillText(fmtAxis(y), pad.l - 5, py + 3.5);
+  }
+
+  // Drawdown fill
+  if (Math.abs(Math.min(...dd)) > 10) {
+    ctx.beginPath(); ctx.moveTo(toX(0), H - pad.b);
+    dd.forEach((v,i) => ctx.lineTo(toX(i), toYd(v)));
+    ctx.lineTo(toX(n-1), H - pad.b); ctx.closePath();
+    const dg = ctx.createLinearGradient(0, 0, 0, H);
+    dg.addColorStop(0, 'rgba(255,61,87,.32)'); dg.addColorStop(1, 'rgba(255,61,87,.04)');
+    ctx.fillStyle = dg; ctx.fill();
+    ctx.beginPath();
+    dd.forEach((v,i) => i === 0 ? ctx.moveTo(toX(0), toYd(v)) : ctx.lineTo(toX(i), toYd(v)));
+    ctx.strokeStyle = 'rgba(255,61,87,.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // Equity fill + line
+  const isProfit = eq[n-1] >= eq[0];
+  const eg = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+  if (isProfit) { eg.addColorStop(0, 'rgba(0,230,118,.28)'); eg.addColorStop(1, 'rgba(0,230,118,.03)'); }
+  else { eg.addColorStop(0, 'rgba(255,61,87,.03)'); eg.addColorStop(1, 'rgba(255,61,87,.28)'); }
+  ctx.beginPath(); ctx.moveTo(toX(0), toYe(eq[0]));
+  for (let i = 1; i < n; i++) {
+    const cx = (toX(i-1)+toX(i))/2;
+    ctx.quadraticCurveTo(toX(i-1), toYe(eq[i-1]), cx, (toYe(eq[i-1])+toYe(eq[i]))/2);
+  }
+  ctx.lineTo(toX(n-1), H - pad.b); ctx.lineTo(toX(0), H - pad.b); ctx.closePath();
+  ctx.fillStyle = eg; ctx.fill();
+
+  ctx.beginPath(); ctx.moveTo(toX(0), toYe(eq[0]));
+  for (let i = 1; i < n; i++) {
+    const cx = (toX(i-1)+toX(i))/2;
+    ctx.quadraticCurveTo(toX(i-1), toYe(eq[i-1]), cx, (toYe(eq[i-1])+toYe(eq[i]))/2);
+  }
+  ctx.strokeStyle = isProfit ? '#00e676' : '#ff3d57'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  // End dot + label
+  const lx = toX(n-1), ly = toYe(eq[n-1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 5, 0, Math.PI*2);
+  ctx.fillStyle = isProfit ? '#00e676' : '#ff3d57'; ctx.fill();
+  ctx.font = 'bold 10px Space Mono,monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = isProfit ? '#00e676' : '#ff3d57';
+  ctx.fillText(fmtAxis(eq[n-1]), lx - 8, ly - 9);
+
+  // X date labels (5 evenly spaced)
+  const xT = Math.min(5, n-1);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '8px Space Mono,monospace'; ctx.textAlign = 'center';
+  for (let i = 0; i <= xT; i++) {
+    const idx = Math.round((i/xT) * (n-1));
+    const lbl = idx === 0 ? (sorted[0]?.date?.slice(5)||'') : (sorted[idx-1]?.date?.slice(5)||'');
+    if (lbl) ctx.fillText(lbl, toX(idx), H - 10);
+  }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+  axisLine(ctx, pad.l, pad.t, pad.l, H - pad.b);
+  axisLine(ctx, pad.l, H - pad.b, W - pad.r, H - pad.b);
+
+  // Labels
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '8px Space Mono,monospace'; ctx.textAlign = 'left';
+  ctx.fillText('EQUITY', pad.l + 4, pad.t + 11);
+  if (Math.abs(Math.min(...dd)) > 10) {
+    ctx.fillStyle = 'rgba(255,61,87,0.5)';
+    ctx.fillText('DRAWDOWN', pad.l + 4, H - pad.b - 4);
+  }
+}
+
+function renderHeatmap(trades) {
+  const hours = Array.from({length:9}, (_,i) => i+9);
+  const dows = [1,2,3,4,5];
+  const dowN = ['Mon','Tue','Wed','Thu','Fri'];
+  const grid = {};
+  hours.forEach(h => dows.forEach(dow => { grid[`${h}-${dow}`] = {pnl:0,count:0,wins:0}; }));
+  trades.forEach(t => {
+    if (!t.time) return;
+    const h = parseInt(t.time.split(':')[0]);
+    const dow = new Date(t.date).getDay();
+    const k = `${h}-${dow}`;
+    if (!grid[k]) return;
+    grid[k].pnl += parseFloat(t.pnl); grid[k].count++;
+    if (parseFloat(t.pnl) > 0) grid[k].wins++;
+  });
+  const allPnls = Object.values(grid).filter(v => v.count > 0).map(v => v.pnl);
+  const maxAbs = allPnls.length ? Math.max(...allPnls.map(Math.abs), 1) : 1;
+  const pnlColor = p => {
+    const t = Math.min(Math.abs(p)/maxAbs, 1);
+    if (p > 0) return `rgba(0,230,118,${0.15+t*0.7})`;
+    if (p < 0) return `rgba(255,61,87,${0.15+t*0.7})`;
+    return 'rgba(80,80,110,0.2)';
+  };
+
+  const CELL = 52, YGAP = 5, XGAP = 5, YW = 44, XH = 26, TOP = 6;
+  const totalW = YW + dows.length*(CELL+XGAP) - XGAP;
+  const totalH = TOP + XH + hours.length*(CELL+YGAP) - YGAP;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 ${totalW} ${totalH}" style="font-family:Space Mono,monospace;display:block;">`;
+  // Column headers
+  dows.forEach((dow,di) => {
+    const cx = YW + di*(CELL+XGAP) + CELL/2;
+    svg += `<text x="${cx}" y="${TOP+16}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.5)">${dowN[di]}</text>`;
+  });
+  hours.forEach((h,hi) => {
+    const cy = TOP + XH + hi*(CELL+YGAP);
+    svg += `<text x="${YW-6}" y="${cy+CELL/2+4}" text-anchor="end" font-size="10" fill="rgba(255,255,255,0.4)">${h}:00</text>`;
+    dows.forEach((dow,di) => {
+      const k = `${h}-${dow}`;
+      const cell = grid[k];
+      const cx = YW + di*(CELL+XGAP);
+      const col = pnlColor(cell.pnl);
+      const wr = cell.count ? Math.round(cell.wins/cell.count*100) : 0;
+      const borderC = cell.pnl > 0 ? 'rgba(0,230,118,0.3)' : cell.pnl < 0 ? 'rgba(255,61,87,0.3)' : 'rgba(255,255,255,0.06)';
+      const tip = cell.count ? `${h}:00 ${dowN[di]}: ${fmtAxis(cell.pnl)} · ${cell.count}t · ${wr}% WR` : 'No trades';
+      const textColor = cell.pnl > 0 ? '#00e676' : cell.pnl < 0 ? '#ff3d57' : 'rgba(255,255,255,0.25)';
+      svg += `<g>
+        <rect x="${cx}" y="${cy}" width="${CELL}" height="${CELL}" rx="6" fill="${col}" stroke="${borderC}" stroke-width="1"/>
+        ${cell.count ? `
+          <text x="${cx+CELL/2}" y="${cy+CELL/2-4}" text-anchor="middle" font-size="11" font-weight="bold" fill="${textColor}">${fmtAxis(cell.pnl)}</text>
+          <text x="${cx+CELL/2}" y="${cy+CELL/2+11}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.42)">${cell.count}t · ${wr}%WR</text>
+        ` : `<text x="${cx+CELL/2}" y="${cy+CELL/2+4}" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.12)">—</text>`}
+        <title>${tip}</title>
+      </g>`;
     });
-    html+='</div>';
   });
-  document.getElementById('an-heatmap-wrap').innerHTML=`<div class="time-heatmap" style="display:flex;flex-direction:column;gap:3px;">${html}</div>`;
+  svg += '</svg>';
+  document.getElementById('an-heatmap-wrap').innerHTML = svg;
 }
 
-function renderSymbolPerf(trades){
-  const sy={};
-  trades.forEach(t=>{if(!sy[t.symbol])sy[t.symbol]={pnl:0,trades:0,wins:0,losses:0};sy[t.symbol].pnl+=t.pnl;sy[t.symbol].trades++;if(t.pnl>0)sy[t.symbol].wins++;else sy[t.symbol].losses++;});
-  const sorted=Object.entries(sy).sort((a,b)=>b[1].pnl-a[1].pnl);
-  const maxAbs=Math.max(...Object.values(sy).map(v=>Math.abs(v.pnl)),1);
-  const el=document.getElementById('an-symbol-perf');
-  if(!sorted.length){el.innerHTML='<div style="padding:28px;text-align:center;color:var(--text3);font-size:12px;">No data</div>';return;}
-  el.innerHTML=sorted.map(([sym,d])=>{
-    const wr=d.wins/d.trades*100;
-    const barW=Math.abs(d.pnl)/maxAbs*100;
-    return `<div style="margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <span style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700;">${sym}</span>
-        <span style="font-family:'Space Mono',monospace;font-size:12px;color:${d.pnl>=0?'var(--green)':'var(--red)'};">${fmt(d.pnl)}</span>
-      </div>
-      <div style="height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:4px;">
-        <div style="height:100%;width:${barW}%;background:${d.pnl>=0?'var(--green)':'var(--red)'};border-radius:3px;transition:width .8s ease;"></div>
-      </div>
-      <div style="display:flex;gap:12px;font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;">
-        <span>${d.trades}t</span><span>${wr.toFixed(0)}% WR</span><span>${d.wins}W / ${d.losses}L</span>
-      </div>
-    </div>`;
-  }).join('');
-}
+function renderScatter(canvasId, tipId, trades) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const filtered = trades.filter(t => holdMinutes(t) > 0);
+  const { W, H } = canvasSize(canvas, 600, canvas.parentElement?.clientHeight || 240);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
 
-function renderScatter(canvasId,tipId,trades){
-  const canvas=document.getElementById(canvasId);
-  if(!canvas)return;
-  const filtered=trades.filter(t=>holdMinutes(t)>0);
-  if(!filtered.length){canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);return;}
-  const W=canvas.offsetWidth||600,H=canvas.offsetHeight||240;
-  canvas.width=W;canvas.height=H;
-  const ctx=canvas.getContext('2d');
-  ctx.clearRect(0,0,W,H);
-  const pad={t:18,b:28,l:58,r:16};
-  const maxX=Math.max(...filtered.map(t=>holdMinutes(t)));
-  const minY=Math.min(...filtered.map(t=>t.pnl),-50);
-  const maxY=Math.max(...filtered.map(t=>t.pnl),50);
-  const rng=maxY-minY||1;
-  const toX=v=>pad.l+(v/maxX)*(W-pad.l-pad.r);
-  const toY=v=>pad.t+(1-(v-minY)/rng)*(H-pad.t-pad.b);
-  const zY=toY(0);
-  // Grid
-  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
-  [0.25,0.5,0.75,1].forEach(f=>{const x=pad.l+f*(W-pad.l-pad.r);ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.22)';ctx.font='8px Space Mono';ctx.textAlign='center';ctx.fillText(Math.round(maxX*f)+'m',x,H-8);});
-  const yTicks=[minY,minY/2,0,maxY/2,maxY].filter((v,i,a)=>a.indexOf(v)===i);
-  yTicks.forEach(v=>{const y=toY(v);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.2)';ctx.font='8px Space Mono';ctx.textAlign='right';ctx.fillText((v>=0?'+':'')+'$'+Math.round(v),pad.l-3,y+3);});
-  // Zero line
-  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(pad.l,zY);ctx.lineTo(W-pad.r,zY);ctx.stroke();
-  // Best-fit line
-  const n=filtered.length;
-  const xs=filtered.map(t=>holdMinutes(t));
-  const ys=filtered.map(t=>t.pnl);
-  const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;
-  const num=xs.reduce((a,b,i)=>a+(b-mx)*(ys[i]-my),0);
-  const den=xs.reduce((a,b)=>a+(b-mx)**2,0)||1;
-  const slope=num/den,intercept=my-slope*mx;
-  ctx.strokeStyle='rgba(68,138,255,0.3)';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
-  ctx.beginPath();ctx.moveTo(toX(0),toY(intercept));ctx.lineTo(toX(maxX),toY(slope*maxX+intercept));ctx.stroke();ctx.setLineDash([]);
+  if (!filtered.length) {
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.font = '11px Space Mono,monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Add trades with entry+exit times to see scatter', W/2, H/2); return;
+  }
+
+  const pad = { t: 22, b: 36, l: 66, r: 18 };
+  const cH = H - pad.t - pad.b, cW = W - pad.l - pad.r;
+  const maxX = Math.max(...filtered.map(t => holdMinutes(t)), 1);
+  const rawMinY = Math.min(...filtered.map(t => t.pnl));
+  const rawMaxY = Math.max(...filtered.map(t => t.pnl));
+  const yPad = (rawMaxY - rawMinY) * 0.15 || 50;
+  const minY = rawMinY - yPad, maxY = rawMaxY + yPad, yRange = maxY - minY || 1;
+
+  const toX = v => pad.l + (v/maxX)*cW;
+  const toY = v => pad.t + (1 - (v-minY)/yRange)*cH;
+  const zY = toY(0);
+
+  // Y ticks
+  const yRaw = rawMaxY - rawMinY || 100;
+  const yMag = Math.pow(10, Math.floor(Math.log10(yRaw/4 || 1)));
+  const yStep = Math.ceil(yRaw/4/yMag)*yMag || 50;
+  const yStart = Math.floor(rawMinY/yStep)*yStep;
+  ctx.font = '9px Space Mono,monospace';
+  for (let y = yStart; y <= rawMaxY + yStep*0.5; y += yStep) {
+    const py = toY(y); if (py < pad.t || py > H - pad.b) continue;
+    ctx.strokeStyle = y === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = y === 0 ? 1.5 : 1;
+    axisLine(ctx, pad.l, py, W - pad.r, py);
+    ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.textAlign = 'right';
+    ctx.fillText(fmtAxis(y), pad.l - 5, py + 3.5);
+  }
+  // X ticks
+  const xStepRaw = maxX / 5, xMag = Math.pow(10, Math.floor(Math.log10(xStepRaw||1)));
+  const xStep = Math.ceil(xStepRaw/xMag)*xMag || 5;
+  for (let x = 0; x <= maxX; x += xStep) {
+    const px = toX(x);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    axisLine(ctx, px, pad.t, px, H - pad.b);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.textAlign = 'center'; ctx.font = '9px Space Mono,monospace';
+    ctx.fillText(x+'m', px, H - 14);
+  }
+  // Zero line label
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1.5;
+  axisLine(ctx, pad.l, zY, W-pad.r, zY);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '8px Space Mono,monospace'; ctx.textAlign = 'left';
+  ctx.fillText('$0', pad.l+3, zY - 4);
+
+  // Regression line
+  const n = filtered.length;
+  const xs = filtered.map(t => holdMinutes(t)), ys = filtered.map(t => t.pnl);
+  const mx2 = xs.reduce((a,b)=>a+b,0)/n, my2 = ys.reduce((a,b)=>a+b,0)/n;
+  const slope = xs.reduce((a,b,i)=>a+(b-mx2)*(ys[i]-my2),0) / (xs.reduce((a,b)=>a+(b-mx2)**2,0)||1);
+  const intercept = my2 - slope*mx2;
+  ctx.strokeStyle = 'rgba(68,138,255,0.5)'; ctx.lineWidth = 1.8; ctx.setLineDash([5,4]);
+  ctx.beginPath(); ctx.moveTo(toX(0), toY(intercept)); ctx.lineTo(toX(maxX), toY(slope*maxX+intercept)); ctx.stroke();
+  ctx.setLineDash([]);
+  // Trend label
+  ctx.fillStyle = 'rgba(68,138,255,0.7)'; ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'left';
+  ctx.fillText(slope > 0 ? '↗ Longer holds more profitable' : '↘ Shorter holds more profitable', pad.l+4, pad.t+13);
+
   // Dots
-  const dotData=[];
-  filtered.forEach(t=>{
-    const x=toX(holdMinutes(t));const y=toY(t.pnl);
-    const r=3+Math.min(parseFloat(t.qty)||1,8)*0.7;
-    const w=t.pnl>0;
-    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle=w?'rgba(0,230,118,0.7)':'rgba(255,61,87,0.7)';ctx.fill();
-    ctx.strokeStyle=w?'rgba(0,230,118,0.95)':'rgba(255,61,87,0.95)';ctx.lineWidth=1;ctx.stroke();
+  const dotData = [];
+  filtered.forEach(t => {
+    const x = toX(holdMinutes(t)), y = toY(t.pnl);
+    const r = 4 + Math.min(parseFloat(t.qty)||1, 8) * 0.8;
+    const w = t.pnl > 0;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fillStyle = w ? 'rgba(0,230,118,0.78)' : 'rgba(255,61,87,0.78)'; ctx.fill();
+    ctx.strokeStyle = w ? '#00e676' : '#ff3d57'; ctx.lineWidth = 1.5; ctx.stroke();
     dotData.push({x,y,r,t});
   });
-  const tip=document.getElementById(tipId);
-  if(!tip)return;
-  canvas.onmousemove=e=>{
-    const rect=canvas.getBoundingClientRect();
-    const mx2=(e.clientX-rect.left)*(W/rect.width);
-    const my2=(e.clientY-rect.top)*(H/rect.height);
-    let hit=null;
-    for(const d of dotData){if(Math.hypot(d.x-mx2,d.y-my2)<d.r+5){hit=d;break;}}
-    if(hit){
-      tip.style.display='block';
-      tip.style.left=(hit.x+10)+'px';tip.style.top=(hit.y-48)+'px';
-      tip.innerHTML=`<b>${hit.t.symbol}</b> ${hit.t.side}<br>${holdMinutes(hit.t)}min hold · Qty ${hit.t.qty}<br><span style="color:${hit.t.pnl>=0?'var(--green)':'var(--red)'}">${fmt(hit.t.pnl)}</span> · ${hit.t.date}`;
-    }else{tip.style.display='none';}
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+  axisLine(ctx, pad.l, pad.t, pad.l, H-pad.b);
+  axisLine(ctx, pad.l, H-pad.b, W-pad.r, H-pad.b);
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'center';
+  ctx.fillText('Hold Time (minutes)', pad.l+cW/2, H-2);
+  ctx.save(); ctx.translate(11, pad.t+cH/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('P&L ($)', 0, 0); ctx.restore();
+
+  const tip = document.getElementById(tipId);
+  if (!tip) return;
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx3 = (e.clientX-rect.left)*(W/rect.width), my3 = (e.clientY-rect.top)*(H/rect.height);
+    let hit = null;
+    for (const d of dotData) { if (Math.hypot(d.x-mx3, d.y-my3) < d.r+6) { hit=d; break; } }
+    if (hit) {
+      tip.style.display='block'; tip.style.left=(hit.x+12)+'px'; tip.style.top=(hit.y-56)+'px';
+      tip.innerHTML=`<b>${hit.t.symbol}</b> ${hit.t.side}<br>${holdMinutes(hit.t)}min · Qty ${hit.t.qty}<br><span style="color:${hit.t.pnl>=0?'#00e676':'#ff3d57'}">${fmt(hit.t.pnl)}</span><br><span style="opacity:.55">${hit.t.date}</span>`;
+    } else { tip.style.display='none'; }
   };
-  canvas.onmouseleave=()=>{if(tip)tip.style.display='none';};
+  canvas.onmouseleave = () => { if (tip) tip.style.display='none'; };
 }
 
-function renderDistChart(trades){
-  const pnls=trades.map(t=>t.pnl);
-  if(!pnls.length)return;
-  const mn=Math.min(...pnls),mx=Math.max(...pnls);
-  const bkt=12,step=(mx-mn)/bkt||1;
-  const cnts=new Array(bkt).fill(0);
-  pnls.forEach(p=>{const idx=Math.min(bkt-1,Math.floor((p-mn)/step));cnts[idx]++;});
-  const labels=cnts.map((_,i)=>`${Math.round(mn+i*step)}`);
-  const colors=cnts.map((_,i)=>{const mid=mn+(i+.5)*step;return mid>=0?'rgba(0,230,118,.75)':'rgba(255,61,87,.75)';});
-  renderBarChartWithColors('an-dist',labels,cnts,colors);
-}
+function renderDistChart(trades) {
+  const pnls = trades.map(t => t.pnl); if (!pnls.length) return;
+  const mn = Math.min(...pnls), mx = Math.max(...pnls);
+  const bkt = 12, step = (mx-mn)/bkt || 1;
+  const cnts = new Array(bkt).fill(0);
+  pnls.forEach(p => { const idx = Math.min(bkt-1, Math.floor((p-mn)/step)); cnts[idx]++; });
+  const midpoints = cnts.map((_,i) => mn+(i+0.5)*step);
+  const labels = cnts.map((_,i) => fmtAxis(mn+i*step));
+  const colors = midpoints.map(m => m >= 0 ? 'rgba(0,230,118,.82)' : 'rgba(255,61,87,.82)');
 
-function getDowPnl(trades){
-  const p=[0,0,0,0,0];
-  trades.forEach(t=>{const d=new Date(t.date).getDay();if(d>=1&&d<=5)p[d-1]+=t.pnl;});
-  return p;
-}
-function getHourPnl(trades){
-  const p=new Array(13).fill(0);
-  trades.forEach(t=>{if(t.time){const h=parseInt(t.time.split(':')[0]);if(h>=9&&h<=21)p[h-9]+=t.pnl;}});
-  return p;
-}
+  const c = document.getElementById('an-dist'); if (!c) return;
+  const ctx = c.getContext('2d');
+  const { W, H } = canvasSize(c, 500, parseInt(c.getAttribute('height'))||200);
+  ctx.clearRect(0,0,W,H);
 
-function renderMonthlyChart(trades){
-  const mp={};
-  trades.forEach(t=>{const k=t.date.slice(0,7);if(!mp[k])mp[k]=0;mp[k]+=t.pnl;});
-  const keys=Object.keys(mp).sort().slice(-8);
-  if(!keys.length)return;
-  renderBarChart('an-monthly',keys.map(k=>k.slice(5)),keys.map(k=>mp[k]));
-}
+  const maxCnt = Math.max(...cnts, 1);
+  const pad = { t:18, b:36, l:34, r:12 };
+  const cH = H - pad.t - pad.b, cW = W - pad.l - pad.r;
+  const slot = cW/bkt, bW = Math.max(slot*0.82, 4), gap = (slot-bW)/2;
 
-function renderSetupPerf(trades){
-  const st={};
-  trades.forEach(t=>{const s=t.setup||'Untagged';if(!st[s])st[s]={pnl:0,trades:0,wins:0};st[s].pnl+=t.pnl;st[s].trades++;if(t.pnl>0)st[s].wins++;});
-  const sorted=Object.entries(st).sort((a,b)=>b[1].pnl-a[1].pnl);
-  const el=document.getElementById('an-setup-perf');
-  if(!sorted.length){el.innerHTML='<div style="padding:28px;text-align:center;color:var(--text3);font-size:12px;">No data</div>';return;}
-  el.innerHTML=sorted.map(([s,d])=>`
-    <div style="margin-bottom:11px;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-        <span style="font-size:11px;font-family:'Space Mono',monospace;overflow:hidden;white-space:nowrap;max-width:100px;">${s}</span>
-        <span style="font-family:'Space Mono',monospace;font-size:11px;color:${d.pnl>=0?'var(--green)':'var(--red)'};">${fmt(d.pnl)}</span>
-      </div>
-      <div style="display:flex;gap:10px;font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;">
-        <span>${d.trades}t</span><span>${Math.round(d.wins/d.trades*100)}% WR</span>
-      </div>
-    </div>`).join('');
-}
-
-function renderKeyStats(s,trades){
-  const avgHold=trades.reduce((a,t)=>a+(holdMinutes(t)||0),0)/trades.length;
-  // Avg planned R:R from trades with stop+tp
-  const rrTrades=trades.filter(t=>t.plannedRR>0);
-  const avgPlannedRR=rrTrades.length?rrTrades.reduce((a,t)=>a+t.plannedRR,0)/rrTrades.length:null;
-  // Avg actual R:R (pnl / risk)
-  const riskTrades=trades.filter(t=>t.riskPct>0&&t.stop&&t.entry);
-  const avgRiskPct=riskTrades.length?riskTrades.reduce((a,t)=>a+t.riskPct,0)/riskTrades.length:null;
-  // Bias accuracy: when bias matches direction and trade wins
-  const biasedTrades=trades.filter(t=>t.bias&&t.side);
-  const biasAligned=biasedTrades.filter(t=>(t.bias==='Bullish'&&t.side==='LONG')||(t.bias==='Bearish'&&t.side==='SHORT'));
-  const biasAccuracy=biasAligned.length?biasAligned.filter(t=>t.pnl>0).length/biasAligned.length:null;
-  // Avg clarity score
-  const clarityTrades=trades.filter(t=>t.clarity);
-  const avgClarity=clarityTrades.length?clarityTrades.reduce((a,t)=>a+parseInt(t.clarity),0)/clarityTrades.length:null;
-  const rows=[
-    ['Expectancy',fmt(s.wr*s.avgWin+(1-s.wr)*s.avgLoss)],
-    ['Avg Planned R:R',avgPlannedRR?avgPlannedRR.toFixed(2)+'R':'— (add SL/TP)'],
-    ['Actual R:R (real)',s.rr.toFixed(2)+'R'],
-    ['Avg Risk Per Trade',avgRiskPct?avgRiskPct.toFixed(2)+'%':'— (add stops)'],
-    ['Risk Profile',avgRiskPct?(avgRiskPct<=1?'Conservative 0.25–1%':avgRiskPct<=3?'Standard 1–3%':'Aggressive 3%+'):'—'],
-    ['Bias Accuracy',biasAccuracy!==null?Math.round(biasAccuracy*100)+'% ('+biasAligned.length+' trades)':'—'],
-    ['Avg Clarity Score',avgClarity?avgClarity.toFixed(1)+'/5':'—'],
-    ['Largest Win',fmt(s.largestWin)],
-    ['Largest Loss',fmt(s.largestLoss)],
-    ['Max Win Streak',s.mxW+' trades'],
-    ['Max Loss Streak',s.mxL+' trades'],
-    ['Avg Hold Time',avgHold?Math.round(avgHold)+'m':'—'],
-    ['Total Trades',trades.length],
-    ['Gross Profit',fmt(s.wins.reduce((a,b)=>a+b.pnl,0))],
-    ['Gross Loss',fmt(s.losses.reduce((a,b)=>a+b.pnl,0))],
-    ['Sharpe Proxy',calcSharpe(trades).toFixed(3)],
-  ];
-  document.getElementById('an-key-stats').innerHTML=rows.map(([l,v])=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:11px;color:var(--text2);">${l}</span>
-      <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);">${v}</span>
-    </div>`).join('');
-}
-
-function renderCumulativeChart(trades){
-  const canvas=document.getElementById('an-cumulative');
-  if(!canvas)return;
-  const sorted=[...trades].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-  let cum=0;
-  const pts=[0,...sorted.map(t=>{cum+=t.pnl;return cum;})];
-  const W=canvas.offsetWidth||400,H=parseInt(canvas.getAttribute('height'))||200;
-  canvas.width=W;canvas.height=H;
-  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);
-  if(pts.length<2)return;
-  const pad={t:12,b:12,l:10,r:10};
-  const min=Math.min(...pts),max=Math.max(...pts),rng=max-min||1;
-  const n=pts.length;
-  const toX=i=>pad.l+(i/(n-1))*(W-pad.l-pad.r);
-  const toY=v=>pad.t+(1-(v-min)/rng)*(H-pad.t-pad.b);
-  const isProfit=pts[n-1]>=0;
-  const g=ctx.createLinearGradient(0,pad.t,0,H-pad.b);
-  if(isProfit){g.addColorStop(0,'rgba(0,230,118,.22)');g.addColorStop(1,'rgba(0,230,118,.02)');}
-  else{g.addColorStop(0,'rgba(255,61,87,.02)');g.addColorStop(1,'rgba(255,61,87,.22)');}
-  ctx.beginPath();ctx.moveTo(toX(0),toY(pts[0]));
-  for(let i=1;i<n;i++){const cx=(toX(i-1)+toX(i))/2;ctx.quadraticCurveTo(toX(i-1),toY(pts[i-1]),cx,(toY(pts[i-1])+toY(pts[i]))/2);}
-  ctx.lineTo(toX(n-1),H-pad.b);ctx.lineTo(toX(0),H-pad.b);ctx.closePath();
-  ctx.fillStyle=g;ctx.fill();
-  ctx.beginPath();ctx.moveTo(toX(0),toY(pts[0]));
-  for(let i=1;i<n;i++){const cx=(toX(i-1)+toX(i))/2;ctx.quadraticCurveTo(toX(i-1),toY(pts[i-1]),cx,(toY(pts[i-1])+toY(pts[i]))/2);}
-  ctx.strokeStyle=isProfit?'var(--green)':'var(--red)';ctx.lineWidth=2;ctx.stroke();
-}
-
-// ── GENERIC BAR CHART ──
-function renderBarChart(canvasId,labels,values){
-  const colors=values.map(v=>v>=0?'rgba(0,230,118,.78)':'rgba(255,61,87,.78)');
-  renderBarChartWithColors(canvasId,labels,values,colors);
-}
-function renderBarChartWithColors(canvasId,labels,values,colors){
-  const c=document.getElementById(canvasId);if(!c)return;
-  const ctx=c.getContext('2d');
-  const W=c.offsetWidth||400,H=parseInt(c.getAttribute('height'))||160;
-  c.width=W;c.height=H;ctx.clearRect(0,0,W,H);
-  const maxAbs=Math.max(...values.map(Math.abs),.01);
-  const pad={t:16,b:22,l:6,r:6};
-  const cH=H-pad.t-pad.b,cW=W-pad.l-pad.r;
-  const bW=(cW/labels.length)*.62,gap=(cW/labels.length)*.38;
-  const zY=pad.t+cH/2;
-  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,zY);ctx.lineTo(W-pad.r,zY);ctx.stroke();
-  for(let i=0;i<labels.length;i++){
-    const x=pad.l+i*(bW+gap)+gap/2;const v=values[i];
-    const bH=Math.abs(v)/maxAbs*(cH/2);const y=v>=0?zY-bH:zY;
-    ctx.fillStyle=colors[i];
-    ctx.beginPath();
-    if(ctx.roundRect)ctx.roundRect(x,y,bW,bH,[v>=0?3:0,v>=0?3:0,v<0?3:0,v<0?3:0]);
-    else ctx.rect(x,y,bW,bH);
-    ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,.22)';ctx.font=`8px 'Space Mono'`;ctx.textAlign='center';
-    ctx.fillText(labels[i],x+bW/2,H-5);
+  // Y grid
+  for (let i=0; i<=4; i++) {
+    const v = (maxCnt/4)*i, py = pad.t + (1-v/maxCnt)*cH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    axisLine(ctx, pad.l, py, W-pad.r, py);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'right';
+    if (i > 0) ctx.fillText(Math.round(v), pad.l-3, py+3.5);
   }
+
+  // Bars
+  cnts.forEach((v,i) => {
+    if (v === 0) return;
+    const x = pad.l + i*slot + gap, bH = (v/maxCnt)*cH, y = pad.t + cH - bH;
+    ctx.fillStyle = colors[i];
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, bW, bH, [3,3,0,0]); else ctx.rect(x,y,bW,bH);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'center';
+    ctx.fillText(v, x+bW/2, y-4);
+  });
+
+  // X labels every other bucket
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px Space Mono,monospace'; ctx.textAlign = 'center';
+  cnts.forEach((_,i) => {
+    if (i%2!==0) return;
+    ctx.fillText(labels[i], pad.l+i*slot+slot/2, H-14);
+  });
+
+  // Zero divider if range spans zero
+  if (mn < 0 && mx > 0) {
+    const zx = pad.l + (-mn/step)*slot;
+    ctx.strokeStyle = 'rgba(255,255,255,0.38)'; ctx.lineWidth = 1.5;
+    axisLine(ctx, zx, pad.t, zx, H-pad.b);
+    ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'center';
+    ctx.fillText('$0', zx, pad.t-5);
+  }
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.font = '9px Space Mono,monospace';
+  ctx.textAlign = 'center'; ctx.fillText('P&L per trade', pad.l+cW/2, H-2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+  axisLine(ctx, pad.l, pad.t, pad.l, H-pad.b);
+  axisLine(ctx, pad.l, H-pad.b, W-pad.r, H-pad.b);
 }
+
+function getDowPnl(trades) {
+  const p = [0,0,0,0,0];
+  trades.forEach(t => { const d=new Date(t.date).getDay(); if(d>=1&&d<=5) p[d-1]+=t.pnl; });
+  return p;
+}
+function getHourPnl(trades) {
+  const p = new Array(13).fill(0);
+  trades.forEach(t => { if(t.time){const h=parseInt(t.time.split(':')[0]);if(h>=9&&h<=21)p[h-9]+=t.pnl;} });
+  return p;
+}
+
+function renderMonthlyChart(trades) {
+  const mp = {};
+  trades.forEach(t => { const k=t.date.slice(0,7); if(!mp[k])mp[k]=0; mp[k]+=t.pnl; });
+  const keys = Object.keys(mp).sort().slice(-8);
+  if (!keys.length) return;
+  renderBarChart('an-monthly', keys.map(k=>k.slice(5)), keys.map(k=>mp[k]));
+}
+
+function renderSetupPerf(trades) {
+  const st = {};
+  trades.forEach(t => {
+    const s = t.setup||'Untagged'; if(!st[s]) st[s]={pnl:0,trades:0,wins:0};
+    st[s].pnl+=t.pnl; st[s].trades++; if(t.pnl>0) st[s].wins++;
+  });
+  const sorted = Object.entries(st).sort((a,b)=>b[1].pnl-a[1].pnl);
+  const el = document.getElementById('an-setup-perf');
+  if (!sorted.length) { el.innerHTML='<div style="padding:28px;text-align:center;color:var(--text3);font-size:12px;">No data</div>'; return; }
+  const maxAbs = Math.max(...Object.values(st).map(v=>Math.abs(v.pnl)),1);
+  el.innerHTML = sorted.map(([s,d]) => {
+    const wr = d.wins/d.trades*100;
+    const bw = Math.abs(d.pnl)/maxAbs*100;
+    return `<div style="margin-bottom:13px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700;overflow:hidden;white-space:nowrap;max-width:120px;">${s}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:12px;color:${d.pnl>=0?'#00e676':'#ff3d57'};">${fmt(d.pnl)}</span>
+      </div>
+      <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:5px;">
+        <div style="height:100%;width:${bw}%;background:${d.pnl>=0?'#00e676':'#ff3d57'};border-radius:3px;transition:width .9s ease;"></div>
+      </div>
+      <div style="display:flex;gap:12px;font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;">
+        <span>${d.trades}t</span><span>${wr.toFixed(0)}% WR</span><span>${d.wins}W/${d.losses||d.trades-d.wins}L</span>
+      </div></div>`;
+  }).join('');
+}
+
+function renderCumulativeChart(trades) {
+  const canvas = document.getElementById('an-cumulative'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const sorted = [...trades].sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));
+  let cum = 0;
+  const pts = [0, ...sorted.map(t => { cum+=t.pnl; return cum; })];
+  const { W, H } = canvasSize(canvas, 500, parseInt(canvas.getAttribute('height'))||200);
+  ctx.clearRect(0,0,W,H);
+  if (pts.length < 2) {
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='10px Space Mono,monospace'; ctx.textAlign='center';
+    ctx.fillText('Add trades to see cumulative P&L', W/2, H/2); return;
+  }
+
+  const minP = Math.min(...pts), maxP = Math.max(...pts);
+  const rawStep = (maxP-minP)/4 || 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const yStep = Math.ceil(rawStep/mag)*mag || 1;
+  const yMin = Math.floor(minP/yStep)*yStep, yMax = Math.ceil(maxP/yStep)*yStep;
+  const yRange = yMax - yMin || 1;
+
+  const pad = { t:22, b:26, l:60, r:12 };
+  const cH = H-pad.t-pad.b, cW = W-pad.l-pad.r;
+  const n = pts.length;
+  const toX = i => pad.l + (i/(n-1))*cW;
+  const toY = v => pad.t + (1-(v-yMin)/yRange)*cH;
+  const isProfit = pts[n-1] >= 0;
+
+  // Grid + Y labels
+  ctx.font = '9px Space Mono,monospace'; ctx.textAlign = 'right';
+  for (let y=yMin; y<=yMax+yStep*0.01; y+=yStep) {
+    const py = toY(y); if (py < pad.t-4 || py > H-pad.b+4) continue;
+    ctx.strokeStyle = y===0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = y===0 ? 1.5 : 1;
+    axisLine(ctx, pad.l, py, W-pad.r, py);
+    ctx.fillStyle = 'rgba(255,255,255,0.32)';
+    ctx.fillText(fmtAxis(y), pad.l-5, py+3.5);
+  }
+
+  const g = ctx.createLinearGradient(0,pad.t,0,H-pad.b);
+  if (isProfit) { g.addColorStop(0,'rgba(0,230,118,.26)'); g.addColorStop(1,'rgba(0,230,118,.03)'); }
+  else { g.addColorStop(0,'rgba(255,61,87,.03)'); g.addColorStop(1,'rgba(255,61,87,.26)'); }
+
+  ctx.beginPath(); ctx.moveTo(toX(0),toY(pts[0]));
+  for (let i=1;i<n;i++) { const cx=(toX(i-1)+toX(i))/2; ctx.quadraticCurveTo(toX(i-1),toY(pts[i-1]),cx,(toY(pts[i-1])+toY(pts[i]))/2); }
+  ctx.lineTo(toX(n-1),H-pad.b); ctx.lineTo(toX(0),H-pad.b); ctx.closePath();
+  ctx.fillStyle=g; ctx.fill();
+
+  ctx.beginPath(); ctx.moveTo(toX(0),toY(pts[0]));
+  for (let i=1;i<n;i++) { const cx=(toX(i-1)+toX(i))/2; ctx.quadraticCurveTo(toX(i-1),toY(pts[i-1]),cx,(toY(pts[i-1])+toY(pts[i]))/2); }
+  ctx.strokeStyle = isProfit ? '#00e676' : '#ff3d57'; ctx.lineWidth = 2.2; ctx.stroke();
+
+  const lx=toX(n-1), ly=toY(pts[n-1]);
+  ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.fillStyle=isProfit?'#00e676':'#ff3d57'; ctx.fill();
+  ctx.font='bold 10px Space Mono,monospace'; ctx.textAlign='right'; ctx.fillStyle=isProfit?'#00e676':'#ff3d57';
+  ctx.fillText(fmtAxis(pts[n-1]), lx-7, ly-8);
+
+  // X date ticks
+  const xT = Math.min(5,n-1);
+  ctx.fillStyle='rgba(255,255,255,0.22)'; ctx.font='8px Space Mono,monospace'; ctx.textAlign='center';
+  for (let i=0;i<=xT;i++) {
+    const idx = Math.round((i/xT)*(n-1));
+    const lbl = idx===0 ? (sorted[0]?.date?.slice(5)||'') : (sorted[idx-1]?.date?.slice(5)||'');
+    if (lbl) ctx.fillText(lbl, toX(idx), H-8);
+  }
+
+  ctx.strokeStyle='rgba(255,255,255,0.1)'; ctx.lineWidth=1;
+  axisLine(ctx, pad.l, pad.t, pad.l, H-pad.b);
+  axisLine(ctx, pad.l, H-pad.b, W-pad.r, H-pad.b);
+}
+
+
 
 // ═══════════════════════════════════════════
 //  JOURNAL
