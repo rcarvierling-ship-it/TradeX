@@ -678,6 +678,21 @@ canvas.chart-canvas{width:100%;display:block;}
         <div class="acc-meter"><div class="acc-m-lbl">Daily Loss Limit</div><div class="acc-m-row"><span class="acc-m-val" id="dll-used">$0</span><span class="acc-m-val" style="color:var(--text3)">$1,500 limit</span></div><div class="gauge-track"><div class="gauge-fill" id="dll-bar" style="width:0%;background:linear-gradient(90deg,var(--green),var(--amber));"></div></div></div>
         <div class="acc-meter"><div class="acc-m-lbl">Trailing Max Drawdown</div><div class="acc-m-row"><span class="acc-m-val" id="dd-used">$0</span><span class="acc-m-val" style="color:var(--text3)">$3,000 limit</span></div><div class="gauge-track"><div class="gauge-fill" id="dd-bar" style="width:0%;background:linear-gradient(90deg,var(--green),var(--red));"></div></div></div>
         <div class="acc-meter"><div class="acc-m-lbl">Profit Target</div><div class="acc-m-row"><span class="acc-m-val pos" id="pt-val">$0</span><span class="acc-m-val" style="color:var(--text3)">$3,000 target</span></div><div class="gauge-track"><div class="gauge-fill" id="pt-bar" style="width:0%;background:linear-gradient(90deg,var(--blue),var(--green));"></div></div></div>
+        <!-- Risk management guide -->
+        <div style="background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:4px;">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);font-family:'Space Mono',monospace;margin-bottom:8px;">Risk Per Trade Guide</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:var(--text2);">High R:R · Low WR</span>
+              <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:4px;">0.25–1%</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:var(--text2);">Low R:R · High WR</span>
+              <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--amber);background:rgba(255,167,38,.1);padding:2px 8px;border-radius:4px;">1–3%</span>
+            </div>
+            <div style="margin-top:4px;font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;" id="current-risk-profile">Avg risk: calculating…</div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="dash-grid-3">
@@ -869,21 +884,43 @@ canvas.chart-canvas{width:100%;display:block;}
 <div class="modal-overlay" id="modal-trade">
   <div class="modal">
     <div class="modal-hdr"><div class="modal-ttl">LOG TRADE</div><button class="modal-close" onclick="closeModal('modal-trade')">✕</button></div>
+
+    <!-- RISK CALCULATOR BAR -->
+    <div id="risk-calc-bar" style="display:none;margin-bottom:16px;padding:12px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);font-family:'Space Mono',monospace;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);">RISK CALCULATOR</div>
+        <div style="display:flex;gap:20px;align-items:center;">
+          <div><span style="font-size:10px;color:var(--text3);">Risk $</span><span style="font-size:14px;font-weight:700;color:var(--amber);margin-left:6px;" id="rc-risk-dollar">—</span></div>
+          <div><span style="font-size:10px;color:var(--text3);">Risk %</span><span style="font-size:14px;font-weight:700;margin-left:6px;" id="rc-risk-pct">—</span></div>
+          <div><span style="font-size:10px;color:var(--text3);">R:R</span><span style="font-size:14px;font-weight:700;color:var(--blue);margin-left:6px;" id="rc-rr">—</span></div>
+          <div id="rc-risk-class" style="padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="form-grid">
-      <div class="form-group"><label class="form-label">Symbol</label><input class="form-input" id="t-sym" placeholder="NQ, ES, SPY…" style="text-transform:uppercase"></div>
+      <div class="form-group"><label class="form-label">Symbol / Pair</label><input class="form-input" id="t-sym" placeholder="NQ, ES, EUR/USD…" style="text-transform:uppercase"></div>
       <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="t-date" type="date"></div>
-      <div class="form-group"><label class="form-label">Time</label><input class="form-input" id="t-time" type="time"></div>
+      <div class="form-group"><label class="form-label">Entry Time</label><input class="form-input" id="t-time" type="time"></div>
       <div class="form-group"><label class="form-label">Side</label><select class="f-select" id="t-side"><option value="LONG">Long</option><option value="SHORT">Short</option></select></div>
-      <div class="form-group"><label class="form-label">Quantity</label><input class="form-input" id="t-qty" type="number" placeholder="1" step="any"></div>
-      <div class="form-group"><label class="form-label">Entry Price</label><input class="form-input" id="t-entry" type="number" placeholder="0.00" step="any"></div>
-      <div class="form-group"><label class="form-label">Exit Price</label><input class="form-input" id="t-exit" type="number" placeholder="0.00" step="any"></div>
+      <div class="form-group"><label class="form-label">Quantity</label><input class="form-input" id="t-qty" type="number" placeholder="1" step="any" oninput="updateRiskCalc()"></div>
+      <div class="form-group"><label class="form-label">Entry Price</label><input class="form-input" id="t-entry" type="number" placeholder="0.00" step="any" oninput="updateRiskCalc()"></div>
+      <div class="form-group"><label class="form-label">Exit Price</label><input class="form-input" id="t-exit" type="number" placeholder="0.00" step="any" oninput="updateRiskCalc()"></div>
+      <div class="form-group"><label class="form-label">Stop Loss</label><input class="form-input" id="t-stop" type="number" placeholder="0.00" step="any" oninput="updateRiskCalc()"></div>
+      <div class="form-group"><label class="form-label">Take Profit</label><input class="form-input" id="t-tp" type="number" placeholder="0.00" step="any" oninput="updateRiskCalc()"></div>
       <div class="form-group"><label class="form-label">P&L ($) — Auto if blank</label><input class="form-input" id="t-pnl" type="number" placeholder="Auto-calc" step="any"></div>
-      <div class="form-group"><label class="form-label">Exit Time (for hold calc)</label><input class="form-input" id="t-exittime" type="time"></div>
-      <div class="form-group"><label class="form-label">Setup Tag</label><input class="form-input" id="t-setup" placeholder="Breakout, Reversal…"></div>
-      <div class="form-group"><label class="form-label">Stop Loss</label><input class="form-input" id="t-stop" type="number" placeholder="0.00" step="any"></div>
+      <div class="form-group"><label class="form-label">Exit Time</label><input class="form-input" id="t-exittime" type="time"></div>
+      <div class="form-group"><label class="form-label">Bias Before Trade</label><select class="f-select" id="t-bias"><option value="">— Select —</option><option value="Bullish">📈 Bullish</option><option value="Bearish">📉 Bearish</option><option value="Neutral">➡️ Neutral</option><option value="Counter-trend">↩️ Counter-trend</option></select></div>
+      <div class="form-group"><label class="form-label">Setup Tag</label><input class="form-input" id="t-setup" placeholder="Breakout, VWAP Reclaim…"></div>
       <div class="form-group"><label class="form-label">Grade</label><select class="f-select" id="t-grade"><option value="">Ungraded</option><option value="A+">A+ Perfect</option><option value="A">A Good</option><option value="B">B Acceptable</option><option value="C">C Poor</option><option value="D">D Rule Break</option></select></div>
     </div>
-    <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Notes</label><textarea class="f-textarea" id="t-notes" placeholder="Setup rationale, mistakes, lessons…"></textarea></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div class="form-group"><label class="form-label">Post-Trade Clarity</label><select class="f-select" id="t-clarity"><option value="">— Select —</option><option value="5">5 — Crystal clear, executed perfectly</option><option value="4">4 — Good, minor hesitation</option><option value="3">3 — Okay, some confusion</option><option value="2">2 — Messy, unsure during trade</option><option value="1">1 — No idea what I was doing</option></select></div>
+      <div class="form-group"><label class="form-label">W/L Result</label><select class="f-select" id="t-result"><option value="">Auto (from P&L)</option><option value="WIN">Win</option><option value="LOSS">Loss</option><option value="BE">Break Even</option></select></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Notes</label><textarea class="f-textarea" id="t-notes" placeholder="Setup rationale, what you saw, mistakes, lessons…"></textarea></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeModal('modal-trade')">Cancel</button>
       <button class="btn btn-success" onclick="saveTrade()">Save Trade</button>
@@ -894,14 +931,80 @@ canvas.chart-canvas{width:100%;display:block;}
 <div class="modal-overlay" id="modal-journal">
   <div class="modal">
     <div class="modal-hdr"><div class="modal-ttl">JOURNAL ENTRY</div><button class="modal-close" onclick="closeModal('modal-journal')">✕</button></div>
-    <div class="form-grid">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
       <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="j-date" type="date"></div>
       <div class="form-group"><label class="form-label">Mood</label><select class="f-select" id="j-mood"><option value="🔥">🔥 Fired Up</option><option value="😊" selected>😊 Confident</option><option value="😐">😐 Neutral</option><option value="😰">😰 Anxious</option><option value="😤">😤 Frustrated</option><option value="😴">😴 Tired</option></select></div>
-      <div class="form-group"><label class="form-label">Discipline (1-10)</label><input class="form-input" id="j-score" type="number" min="1" max="10" placeholder="7"></div>
+      <div class="form-group"><label class="form-label">Discipline Score (1–10)</label><input class="form-input" id="j-score" type="number" min="1" max="10" placeholder="7"></div>
     </div>
-    <div class="form-group" style="margin-bottom:11px;"><label class="form-label">Pre-Market Plan</label><textarea class="f-textarea" id="j-plan" placeholder="Key levels, bias, catalysts…"></textarea></div>
-    <div class="form-group" style="margin-bottom:11px;"><label class="form-label">Post-Session Reflection</label><textarea class="f-textarea" id="j-reflection" placeholder="What worked, what didn't…"></textarea></div>
-    <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Tags (comma separated)</label><input class="form-input" id="j-tags" placeholder="overtraded, good execution…"></div>
+
+    <!-- The 5 structured questions -->
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);font-family:'Space Mono',monospace;margin-bottom:12px;">// 5 JOURNAL QUESTIONS</div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label" style="color:var(--amber);">1 — Win / Loss Summary</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div><label class="form-label" style="font-size:8px;">Wins</label><input class="form-input" id="j-wins" type="number" min="0" placeholder="0"></div>
+          <div><label class="form-label" style="font-size:8px;">Losses</label><input class="form-input" id="j-losses" type="number" min="0" placeholder="0"></div>
+          <div><label class="form-label" style="font-size:8px;">Day P&L ($)</label><input class="form-input" id="j-day-pnl" type="number" step="any" placeholder="0.00"></div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label" style="color:var(--amber);">2 — What Pair / Instrument</label>
+        <input class="form-input" id="j-pairs" placeholder="NQ, ES, EUR/USD, AAPL… what did you trade today?">
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label" style="color:var(--amber);">3 — What Was Your Bias</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <select class="f-select" id="j-bias">
+            <option value="">— Pre-market bias —</option>
+            <option value="Bullish">📈 Bullish</option>
+            <option value="Bearish">📉 Bearish</option>
+            <option value="Neutral">➡️ Neutral</option>
+            <option value="No bias">❓ No clear bias</option>
+          </select>
+          <input class="form-input" id="j-bias-notes" placeholder="Why? Key levels, catalysts…">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label" style="color:var(--amber);">4 — What Was Your R:R</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div><label class="form-label" style="font-size:8px;">Planned R:R</label><input class="form-input" id="j-planned-rr" type="number" step="0.1" placeholder="e.g. 2.5"></div>
+          <div><label class="form-label" style="font-size:8px;">Actual R:R</label><input class="form-input" id="j-actual-rr" type="number" step="0.1" placeholder="e.g. 1.8"></div>
+          <div>
+            <label class="form-label" style="font-size:8px;">Risk Mode</label>
+            <select class="f-select" id="j-risk-mode">
+              <option value="">— Select —</option>
+              <option value="Conservative">0.25–1% (High R:R / Low WR)</option>
+              <option value="Standard">1–3% (Low R:R / High WR)</option>
+              <option value="Aggressive">3%+ (Aggressive)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="color:var(--amber);">5 — Post-Trade Clarity</label>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;">
+          <select class="f-select" id="j-clarity" style="width:180px;">
+            <option value="">— Rating —</option>
+            <option value="5">5 — Executed perfectly</option>
+            <option value="4">4 — Good, minor hesitation</option>
+            <option value="3">3 — Okay, some confusion</option>
+            <option value="2">2 — Messy, unsure</option>
+            <option value="1">1 — Completely lost</option>
+          </select>
+          <textarea class="f-textarea" id="j-reflection" style="min-height:64px;" placeholder="What did you see clearly? What were you unsure about? What would you do differently?"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Pre-Market Plan</label><textarea class="f-textarea" id="j-plan" placeholder="Key levels, support/resistance, catalysts for today…"></textarea></div>
+    <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Tags (comma separated)</label><input class="form-input" id="j-tags" placeholder="overtraded, revenge trade, good execution, missed entry…"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeModal('modal-journal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveJournalEntry()">Save Entry</button>
@@ -1458,6 +1561,15 @@ function renderAccountHealth(s){
   const pt=Math.max(0,s.total);
   document.getElementById('pt-val').textContent='$'+pt.toFixed(2);
   document.getElementById('pt-bar').style.width=Math.min(100,pt/3000*100)+'%';
+  // Risk profile from trades that have riskPct
+  const riskTrades=state.trades.filter(t=>t.riskPct>0);
+  const rpEl=document.getElementById('current-risk-profile');
+  if(rpEl&&riskTrades.length){
+    const avgRisk=riskTrades.reduce((a,t)=>a+t.riskPct,0)/riskTrades.length;
+    const profile=avgRisk<=1?'Conservative (High R:R style)':avgRisk<=3?'Standard (High WR style)':'Aggressive — reduce size';
+    const col=avgRisk<=1?'var(--green)':avgRisk<=3?'var(--amber)':'var(--red)';
+    rpEl.innerHTML=`Avg risk: <span style="color:${col};font-weight:700;">${avgRisk.toFixed(2)}% — ${profile}</span>`;
+  } else if(rpEl){rpEl.textContent='Add stop losses to see risk profile';}
 }
 
 function renderRecentTrades(){
@@ -1881,8 +1993,27 @@ function renderSetupPerf(trades){
 
 function renderKeyStats(s,trades){
   const avgHold=trades.reduce((a,t)=>a+(holdMinutes(t)||0),0)/trades.length;
+  // Avg planned R:R from trades with stop+tp
+  const rrTrades=trades.filter(t=>t.plannedRR>0);
+  const avgPlannedRR=rrTrades.length?rrTrades.reduce((a,t)=>a+t.plannedRR,0)/rrTrades.length:null;
+  // Avg actual R:R (pnl / risk)
+  const riskTrades=trades.filter(t=>t.riskPct>0&&t.stop&&t.entry);
+  const avgRiskPct=riskTrades.length?riskTrades.reduce((a,t)=>a+t.riskPct,0)/riskTrades.length:null;
+  // Bias accuracy: when bias matches direction and trade wins
+  const biasedTrades=trades.filter(t=>t.bias&&t.side);
+  const biasAligned=biasedTrades.filter(t=>(t.bias==='Bullish'&&t.side==='LONG')||(t.bias==='Bearish'&&t.side==='SHORT'));
+  const biasAccuracy=biasAligned.length?biasAligned.filter(t=>t.pnl>0).length/biasAligned.length:null;
+  // Avg clarity score
+  const clarityTrades=trades.filter(t=>t.clarity);
+  const avgClarity=clarityTrades.length?clarityTrades.reduce((a,t)=>a+parseInt(t.clarity),0)/clarityTrades.length:null;
   const rows=[
     ['Expectancy',fmt(s.wr*s.avgWin+(1-s.wr)*s.avgLoss)],
+    ['Avg Planned R:R',avgPlannedRR?avgPlannedRR.toFixed(2)+'R':'— (add SL/TP)'],
+    ['Actual R:R (real)',s.rr.toFixed(2)+'R'],
+    ['Avg Risk Per Trade',avgRiskPct?avgRiskPct.toFixed(2)+'%':'— (add stops)'],
+    ['Risk Profile',avgRiskPct?(avgRiskPct<=1?'Conservative 0.25–1%':avgRiskPct<=3?'Standard 1–3%':'Aggressive 3%+'):'—'],
+    ['Bias Accuracy',biasAccuracy!==null?Math.round(biasAccuracy*100)+'% ('+biasAligned.length+' trades)':'—'],
+    ['Avg Clarity Score',avgClarity?avgClarity.toFixed(1)+'/5':'—'],
     ['Largest Win',fmt(s.largestWin)],
     ['Largest Loss',fmt(s.largestLoss)],
     ['Max Win Streak',s.mxW+' trades'],
@@ -1894,8 +2025,8 @@ function renderKeyStats(s,trades){
     ['Sharpe Proxy',calcSharpe(trades).toFixed(3)],
   ];
   document.getElementById('an-key-stats').innerHTML=rows.map(([l,v])=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:12px;color:var(--text2);">${l}</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:11px;color:var(--text2);">${l}</span>
       <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);">${v}</span>
     </div>`).join('');
 }
@@ -1962,15 +2093,53 @@ function renderBarChartWithColors(canvasId,labels,values,colors){
 // ═══════════════════════════════════════════
 function renderJournal(){
   const el=document.getElementById('journal-entries');
-  if(!state.journalEntries.length){el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text3);font-family:\'Space Mono\';font-size:12px;">No entries yet.</div>';return;}
+  if(!state.journalEntries.length){el.innerHTML='<div style="text-align:center;padding:48px;color:var(--text3);font-family:\'Space Mono\';font-size:12px;">No entries yet. Click "+ New Entry" to start.</div>';return;}
+  const riskColor={'Conservative':'var(--green)','Standard':'var(--amber)','Aggressive':'var(--red)'};
+  const clarityLabel={'5':'Crystal clear','4':'Good','3':'Okay','2':'Messy','1':'Lost'};
   el.innerHTML=[...state.journalEntries].sort((a,b)=>b.date.localeCompare(a.date)).map(j=>`
     <div class="j-entry">
       <div class="j-hdr">
-        <div style="display:flex;align-items:center;gap:11px;"><span style="font-size:20px;">${j.mood}</span><div><div style="font-weight:600;font-size:14px;">${j.date}</div><div class="j-date-lbl">Discipline: ${j.score||'—'}/10</div></div></div>
+        <div style="display:flex;align-items:center;gap:11px;">
+          <span style="font-size:20px;">${j.mood||'😐'}</span>
+          <div>
+            <div style="font-weight:700;font-size:14px;">${j.date}</div>
+            <div class="j-date-lbl">Discipline: ${j.score||'—'}/10${j.riskMode?` · <span style="color:${riskColor[j.riskMode]||'var(--text3)'};">${j.riskMode} risk</span>`:''}${j.clarity?` · Clarity: ${j.clarity}/5 (${clarityLabel[j.clarity]||''})`:''}</div>
+          </div>
+        </div>
         <button class="btn btn-danger btn-sm" onclick="deleteJournal('${j.id}')">✕</button>
       </div>
-      ${j.plan?`<div style="font-size:12px;color:var(--text2);margin-bottom:7px;"><span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:1px;font-family:'Space Mono'">Plan:</span> ${j.plan}</div>`:''}
-      ${j.reflection?`<div style="font-size:12px;color:var(--text2);"><span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:1px;font-family:'Space Mono'">Reflection:</span> ${j.reflection}</div>`:''}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        ${(j.wins||j.losses||j.dayPnl)?`<div style="background:var(--bg3);border-radius:7px;padding:10px;border:1px solid var(--border);">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:6px;">1 — W/L</div>
+          <div style="font-family:'Space Mono',monospace;font-size:12px;">
+            ${j.wins?`<span style="color:var(--green);">${j.wins}W</span> `:''}${j.losses?`<span style="color:var(--red);">${j.losses}L</span> `:''}
+            ${j.dayPnl?`<span style="color:${parseFloat(j.dayPnl)>=0?'var(--green)':'var(--red)'};">${parseFloat(j.dayPnl)>=0?'+$':'−$'}${Math.abs(parseFloat(j.dayPnl)).toFixed(2)}</span>`:''}
+          </div>
+        </div>`:''}
+        ${j.pairs?`<div style="background:var(--bg3);border-radius:7px;padding:10px;border:1px solid var(--border);">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:6px;">2 — PAIRS</div>
+          <div style="font-size:12px;color:var(--text);">${j.pairs}</div>
+        </div>`:''}
+        ${(j.bias||j.biasNotes)?`<div style="background:var(--bg3);border-radius:7px;padding:10px;border:1px solid var(--border);">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:6px;">3 — BIAS</div>
+          <div style="font-size:12px;color:var(--text);">${j.bias||''}${j.biasNotes?` — <span style="color:var(--text2);">${j.biasNotes}</span>`:''}</div>
+        </div>`:''}
+        ${(j.plannedRR||j.actualRR||j.riskMode)?`<div style="background:var(--bg3);border-radius:7px;padding:10px;border:1px solid var(--border);">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:6px;">4 — R:R</div>
+          <div style="font-family:'Space Mono',monospace;font-size:12px;display:flex;gap:12px;flex-wrap:wrap;">
+            ${j.plannedRR?`<span style="color:var(--text3);">Plan: <span style="color:var(--blue);">${j.plannedRR}R</span></span>`:''}
+            ${j.actualRR?`<span style="color:var(--text3);">Actual: <span style="color:${parseFloat(j.actualRR)>=2?'var(--green)':parseFloat(j.actualRR)>=1?'var(--amber)':'var(--red)'};">${j.actualRR}R</span></span>`:''}
+          </div>
+        </div>`:''}
+      </div>
+
+      ${(j.clarity||j.reflection)?`<div style="background:var(--bg3);border-radius:7px;padding:10px;border:1px solid var(--border);margin-bottom:9px;">
+        <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:6px;">5 — POST-TRADE CLARITY ${j.clarity?`<span style="color:var(--text);">${j.clarity}/5</span>`:''}</div>
+        ${j.reflection?`<div style="font-size:12px;color:var(--text2);line-height:1.6;">${j.reflection}</div>`:''}
+      </div>`:''}
+
+      ${j.plan?`<div style="font-size:12px;color:var(--text2);margin-bottom:7px;"><span style="color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:1px;font-family:'Space Mono'">Pre-market plan: </span>${j.plan}</div>`:''}
       <div class="j-tags">${(j.tags||[]).map(t=>`<span class="jtag">${t}</span>`).join('')}</div>
     </div>`).join('');
 }
@@ -1999,6 +2168,37 @@ function openAddTrade(){
   const d=document.getElementById('t-date');if(!d.value)d.value=new Date().toISOString().slice(0,10);
   openModal('modal-trade');
 }
+function updateRiskCalc(){
+  const entry=parseFloat(document.getElementById('t-entry').value);
+  const stop=parseFloat(document.getElementById('t-stop').value);
+  const tp=parseFloat(document.getElementById('t-tp').value);
+  const qty=parseFloat(document.getElementById('t-qty').value);
+  const side=document.getElementById('t-side').value;
+  const bar=document.getElementById('risk-calc-bar');
+  if(!entry||!stop||!qty||isNaN(entry)||isNaN(stop)||isNaN(qty)){bar.style.display='none';return;}
+  const riskPerUnit=Math.abs(entry-stop);
+  const riskDollar=riskPerUnit*qty;
+  const riskPct=(riskDollar/state.startBal)*100;
+  bar.style.display='block';
+  document.getElementById('rc-risk-dollar').textContent='$'+riskDollar.toFixed(2);
+  const pctEl=document.getElementById('rc-risk-pct');
+  pctEl.textContent=riskPct.toFixed(2)+'%';
+  pctEl.style.color=riskPct<=1?'var(--green)':riskPct<=3?'var(--amber)':'var(--red)';
+  // R:R
+  const rrEl=document.getElementById('rc-rr');
+  if(tp&&!isNaN(tp)){
+    const rewardPerUnit=Math.abs(tp-entry);
+    const rr=rewardPerUnit/riskPerUnit;
+    rrEl.textContent=rr.toFixed(2)+'R';
+    rrEl.style.color=rr>=2?'var(--green)':rr>=1?'var(--amber)':'var(--red)';
+  } else {rrEl.textContent='—';}
+  // Risk classification
+  const cls=document.getElementById('rc-risk-class');
+  if(riskPct<=1){cls.textContent='CONSERVATIVE';cls.style.background='rgba(0,230,118,.15)';cls.style.color='var(--green)';cls.style.border='1px solid rgba(0,230,118,.4)';}
+  else if(riskPct<=3){cls.textContent='STANDARD';cls.style.background='rgba(255,167,38,.15)';cls.style.color='var(--amber)';cls.style.border='1px solid rgba(255,167,38,.4)';}
+  else{cls.textContent='HIGH RISK';cls.style.background='rgba(255,61,87,.15)';cls.style.color='var(--red)';cls.style.border='1px solid rgba(255,61,87,.4)';}
+}
+
 function saveTrade(){
   const sym=document.getElementById('t-sym').value.trim().toUpperCase();
   const date=document.getElementById('t-date').value;
@@ -2013,20 +2213,74 @@ function saveTrade(){
   const entryTime=document.getElementById('t-time').value;
   let holdMin=null;
   if(entryTime&&exitTime){const[h1,m1]=entryTime.split(':').map(Number);const[h2,m2]=exitTime.split(':').map(Number);holdMin=Math.max(0,(h2*60+m2)-(h1*60+m1));}
-  state.trades.push({id:Date.now()+Math.random()+'',symbol:sym,date,time:entryTime,exitTime,side,qty,entry,exit,pnl:parseFloat(pnl.toFixed(2)),setup:document.getElementById('t-setup').value.trim(),grade:document.getElementById('t-grade').value,notes:document.getElementById('t-notes').value.trim(),stop:document.getElementById('t-stop').value,holdMin});
+  const stop=document.getElementById('t-stop').value;
+  const tp=document.getElementById('t-tp').value;
+  // Computed R:R
+  let plannedRR=null;
+  if(stop&&tp&&!isNaN(parseFloat(stop))&&!isNaN(parseFloat(tp))){
+    const risk=Math.abs(entry-parseFloat(stop));
+    const reward=Math.abs(parseFloat(tp)-entry);
+    if(risk>0)plannedRR=parseFloat((reward/risk).toFixed(2));
+  }
+  // Risk %
+  let riskPct=null;
+  if(stop&&qty&&!isNaN(parseFloat(stop))){
+    riskPct=parseFloat(((Math.abs(entry-parseFloat(stop))*qty)/state.startBal*100).toFixed(2));
+  }
+  state.trades.push({
+    id:Date.now()+Math.random()+'',
+    symbol:sym,date,time:entryTime,exitTime,side,qty,entry,exit,
+    pnl:parseFloat(pnl.toFixed(2)),
+    stop,tp,holdMin,plannedRR,riskPct,
+    bias:document.getElementById('t-bias').value,
+    setup:document.getElementById('t-setup').value.trim(),
+    grade:document.getElementById('t-grade').value,
+    clarity:document.getElementById('t-clarity').value,
+    result:document.getElementById('t-result').value,
+    notes:document.getElementById('t-notes').value.trim()
+  });
   saveState();closeModal('modal-trade');
   toast(`${side} ${sym} → ${fmt(pnl)}`,pnl>=0?'success':'error');
   renderDashboard();
-  ['t-sym','t-qty','t-entry','t-exit','t-pnl','t-setup','t-notes','t-stop','t-time','t-exittime'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['t-sym','t-qty','t-entry','t-exit','t-pnl','t-setup','t-notes','t-stop','t-tp','t-time','t-exittime'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('t-grade').value='';
+  document.getElementById('t-bias').value='';
+  document.getElementById('t-clarity').value='';
+  document.getElementById('t-result').value='';
+  document.getElementById('risk-calc-bar').style.display='none';
 }
 function deleteTrade(id){state.trades=state.trades.filter(t=>t.id!==id);saveState();renderDashboard();renderTradesPage();toast('Trade deleted','info');}
 function clearAllData(){if(!confirm('Delete ALL data? Cannot be undone.'))return;state.trades=[];state.journalEntries=[];state.rules=[];saveState();renderDashboard();renderCalendar();toast('All data cleared','info');}
 function openJournalModal(){document.getElementById('j-date').value=new Date().toISOString().slice(0,10);openModal('modal-journal');}
 function saveJournalEntry(){
-  state.journalEntries.push({id:Date.now()+'',date:document.getElementById('j-date').value,mood:document.getElementById('j-mood').value,score:document.getElementById('j-score').value,plan:document.getElementById('j-plan').value.trim(),reflection:document.getElementById('j-reflection').value.trim(),tags:document.getElementById('j-tags').value.split(',').map(s=>s.trim()).filter(Boolean)});
+  state.journalEntries.push({
+    id:Date.now()+'',
+    date:document.getElementById('j-date').value,
+    mood:document.getElementById('j-mood').value,
+    score:document.getElementById('j-score').value,
+    // Q1
+    wins:document.getElementById('j-wins').value,
+    losses:document.getElementById('j-losses').value,
+    dayPnl:document.getElementById('j-day-pnl').value,
+    // Q2
+    pairs:document.getElementById('j-pairs').value.trim(),
+    // Q3
+    bias:document.getElementById('j-bias').value,
+    biasNotes:document.getElementById('j-bias-notes').value.trim(),
+    // Q4
+    plannedRR:document.getElementById('j-planned-rr').value,
+    actualRR:document.getElementById('j-actual-rr').value,
+    riskMode:document.getElementById('j-risk-mode').value,
+    // Q5
+    clarity:document.getElementById('j-clarity').value,
+    reflection:document.getElementById('j-reflection').value.trim(),
+    // Extra
+    plan:document.getElementById('j-plan').value.trim(),
+    tags:document.getElementById('j-tags').value.split(',').map(s=>s.trim()).filter(Boolean)
+  });
   saveState();closeModal('modal-journal');renderJournal();toast('Journal entry saved','success');
-  ['j-plan','j-reflection','j-tags','j-score'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['j-wins','j-losses','j-day-pnl','j-pairs','j-bias-notes','j-planned-rr','j-actual-rr','j-reflection','j-plan','j-tags','j-score'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['j-bias','j-clarity','j-risk-mode'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
 function deleteJournal(id){state.journalEntries=state.journalEntries.filter(j=>j.id!==id);saveState();renderJournal();}
 function openAddRule(){document.getElementById('r-text').value='';openModal('modal-rule');}
